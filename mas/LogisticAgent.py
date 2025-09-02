@@ -6,7 +6,7 @@ from datetime import datetime
 import math
 
 class LogisticsAgent:
-    def __init__(self, log_file='logistics_agent.log'):
+    def __init__(self, log_file='../logs/logistics_agent.log'):
         self.redis_client = None
         self.pubsub = None
         self.warehouses = {

@@ -6,7 +6,7 @@ from datetime import datetime
 
 
 class SimpleProductAgent:
-    def __init__(self, threshold=8.0, log_file='supply_chain.log'):
+    def __init__(self, threshold=8.0, log_file='../logs/supply_chain.log'):
         self.threshold = threshold
         self.redis_client = None
         self.pubsub = None
