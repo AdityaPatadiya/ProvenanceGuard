@@ -73,50 +73,78 @@ class LogisticsAgent:
     
     def handle_temperature_alert(self, alert_data):
         """Handle temperature breach alerts"""
-        pallet_id = alert_data['pallet_id']
-        temperature = alert_data['temperature']
-        location = alert_data['location']
-        
-        self.logger.warning(f"Handling temperature alert for {pallet_id}: {temperature}°C at {location}")
-        
-        # Find nearest warehouse
-        warehouse = self.find_nearest_warehouse(location)
-        
-        if warehouse:
-            # Create reroute command
-            reroute_command = {
-                'type': 'reroute',
-                'pallet_id': pallet_id,
-                'warehouse': warehouse,
-                'timestamp': datetime.now().isoformat(),
-                'reason': f'Temperature breach: {temperature}°C'
-            }
-            
-            # Publish reroute command
-            self.redis_client.publish('commands', json.dumps(reroute_command))
-            self.logger.info(f"Issued reroute command for {pallet_id} to {warehouse}")
-        else:
-            self.logger.error(f"Could not find available warehouse for {pallet_id}")
-    
+        try:
+            # Get data with default values to avoid KeyError
+            pallet_id = alert_data.get('pallet_id', 'UNKNOWN_PALLET')
+            temperature = alert_data.get('temperature', 0)
+            location = alert_data.get('location', {})
+
+            # Convert location to a string for logging if it's a dictionary
+            if isinstance(location, dict):
+                loc_str = f"lat: {location.get('lat', 'unknown')}, lon: {location.get('lon', 'unknown')}"
+            else:
+                loc_str = str(location)
+
+            self.logger.warning(f"Handling temperature alert for {pallet_id}: {temperature}°C at {loc_str}")
+
+            # Only proceed if we have a valid location
+            if location and isinstance(location, dict) and 'lat' in location and 'lon' in location:
+                # Find nearest warehouse
+                warehouse = self.find_nearest_warehouse([location['lat'], location['lon']])
+
+                if warehouse:
+                    # Create reroute command
+                    reroute_command = {
+                        'type': 'reroute',
+                        'pallet_id': pallet_id,
+                        'warehouse': warehouse,
+                        'timestamp': datetime.now().isoformat(),
+                        'reason': f'Temperature breach: {temperature}°C'
+                    }
+
+                    # Publish reroute command
+                    self.redis_client.publish('commands', json.dumps(reroute_command))
+                    self.logger.info(f"Issued reroute command for {pallet_id} to {warehouse}")
+                else:
+                    self.logger.error(f"Could not find available warehouse for {pallet_id}")
+            else:
+                self.logger.error(f"Invalid location data for {pallet_id}: {location}")
+
+        except Exception as e:
+            self.logger.error(f"Error handling temperature alert: {e}")
+            # Log the full alert data for debugging
+            self.logger.debug(f"Alert data that caused error: {alert_data}")
+
     def handle_spoilage_alert(self, alert_data):
         """Handle goods spoilage alerts"""
-        pallet_id = alert_data['pallet_id']
-        location = alert_data['location']
-        
-        self.logger.critical(f"Handling spoilage alert for {pallet_id} at {location}")
-        
-        # Create disposal command
-        disposal_command = {
-            'type': 'dispose',
-            'pallet_id': pallet_id,
-            'timestamp': datetime.now().isoformat(),
-            'reason': 'Goods spoiled'
-        }
-        
-        # Publish disposal command
-        self.redis_client.publish('commands', json.dumps(disposal_command))
-        self.logger.info(f"Issued disposal command for {pallet_id}")
-    
+        try:
+            pallet_id = alert_data.get('pallet_id', 'UNKNOWN_PALLET')
+            location = alert_data.get('location', {})
+
+            # Convert location to a string for logging
+            if isinstance(location, dict):
+                loc_str = f"lat: {location.get('lat', 'unknown')}, lon: {location.get('lon', 'unknown')}"
+            else:
+                loc_str = str(location)
+
+            self.logger.critical(f"Handling spoilage alert for {pallet_id} at {loc_str}")
+
+            # Create disposal command
+            disposal_command = {
+                'type': 'dispose',
+                'pallet_id': pallet_id,
+                'timestamp': datetime.now().isoformat(),
+                'reason': 'Goods spoiled'
+            }
+
+            # Publish disposal command
+            self.redis_client.publish('commands', json.dumps(disposal_command))
+            self.logger.info(f"Issued disposal command for {pallet_id}")
+
+        except Exception as e:
+            self.logger.error(f"Error handling spoilage alert: {e}")
+            self.logger.debug(f"Alert data that caused error: {alert_data}")
+
     def handle_warehouse_status(self, command_data):
         """Handle warehouse status updates"""
         warehouse = command_data.get('warehouse')
@@ -136,39 +164,44 @@ class LogisticsAgent:
             
         self.logger.info("Logistics Agent started. Listening for alerts...")
         print("Logistics Agent running. Press Ctrl+C to stop...")
-        
+
         try:
             while True:
                 # Check for new messages
                 message = self.pubsub.get_message(timeout=1.0)
+                print(f"message: {message}")
                 if message and message['type'] == 'message':
                     try:
                         data = json.loads(message['data'])
                         channel = message['channel'].decode()
-                        
+
+                        self.logger.debug(f"Received message on channel {channel}: {data}")
+
                         if channel == 'alerts':
                             alert_type = data.get('type')
-                            
+
                             if alert_type == 'temperature_breach':
                                 self.handle_temperature_alert(data)
                             elif alert_type == 'spoilage':
                                 self.handle_spoilage_alert(data)
                             else:
                                 self.logger.warning(f"Unknown alert type: {alert_type}")
-                        
+
                         elif channel == 'logistics_commands':
                             command_type = data.get('type')
-                            
+
                             if command_type == 'warehouse_status':
                                 self.handle_warehouse_status(data)
                             else:
                                 self.logger.warning(f"Unknown command type: {command_type}")
-                                
-                    except (json.JSONDecodeError, KeyError) as e:
+
+                    except (json.JSONDecodeError) as e:
                         self.logger.error(f"Error processing message: {e}")
-                
+                    except (KeyError) as e:
+                        self.logger.error(f"KeyError occure: {channel}")
+
                 time.sleep(0.1)
-                
+
         except KeyboardInterrupt:
             self.logger.info("Logistics Agent stopped by user")
             print("Stopping Logistics Agent...")
