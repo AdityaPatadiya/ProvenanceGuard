@@ -1,7 +1,6 @@
 import json
-import time
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime
 
 class PalletSimulator:
     """Simulates a pallet of perishable goods with IoT sensors."""
@@ -17,8 +16,15 @@ class PalletSimulator:
         self.route = self._calculate_route(origin, destination)
         self.current_route_index = 0
         self.external_temp = 25.0  # Assume outside is warm
-        self.cooling_unit_efficiency = 0.97  ##### SCENARIO FLAG #####
-        self.is_moving = True       ##### SCENARIO FLAG #####
+        self.cooling_unit_efficiency = 0.97
+        self.is_moving = True
+
+    def __repr__(self):
+        """Debug-friendly string representation of the pallet state."""
+        return (f"<PalletSimulator id={self.pallet_id} "
+                f"status={self.status} "
+                f"location=({round(self.current_location[0], 4)}, {round(self.current_location[1], 4)}) "
+                f"temp={round(self.current_temp, 2)}°C>")
 
     def _calculate_route(self, origin, destination):
         """Generates a simple linear route for demo purposes."""
@@ -55,6 +61,8 @@ class PalletSimulator:
         if self.current_route_index >= len(self.route) - 1:
             self.status = "DELIVERED"
             self.is_moving = False
+        elif self.current_temp > self.max_temp:
+            self.status = "SPOILED"
 
         return self._generate_data_packet()
 
@@ -75,3 +83,23 @@ class PalletSimulator:
         """Allows external scenario scripts to change conditions."""
         self.cooling_unit_efficiency = cooling_efficiency
         self.is_moving = is_moving
+
+    def process_commands(self):
+        """Check for and process commands from Redis"""
+        try:
+            message = self.command_pubsub.get_message()
+            if message and message['type'] == 'message':
+                command = json.loads(message['data'])
+
+                if command['type'] == 'reroute' and command['pallet_id'] == self.id:
+                    new_destination = self.warehouses[command['warehouse']]['location']
+                    self.logger.info(f"Rerouting to {command['warehouse']} at {new_destination}")
+                    self.destination = new_destination
+                    self._calculate_route()  # Recalculate route
+
+                elif command['type'] == 'dispose' and command['pallet_id'] == self.id:
+                    self.logger.warning("Disposal command received - goods will be disposed")
+                    self.status = "AWAITING_DISPOSAL"
+
+        except Exception as e:
+            self.logger.error(f"Error processing command: {e}")

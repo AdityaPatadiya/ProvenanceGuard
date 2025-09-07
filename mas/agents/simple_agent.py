@@ -6,7 +6,7 @@ from datetime import datetime
 
 
 class SimpleProductAgent:
-    def __init__(self, threshold=8.0, log_file='../logs/supply_chain.log'):
+    def __init__(self, threshold=8.0, log_file='../../logs/supply_chain.log'):
         self.threshold = threshold
         self.redis_client = None
         self.pubsub = None
@@ -17,24 +17,24 @@ class SimpleProductAgent:
         # Create a logger
         self.logger = logging.getLogger('SupplyChainAgent')
         self.logger.setLevel(logging.INFO)
-        
+
         # Create file handler which logs even debug messages
         fh = logging.FileHandler(log_file)
         fh.setLevel(logging.INFO)
-        
+
         # Create console handler with a higher log level
         ch = logging.StreamHandler()
         ch.setLevel(logging.INFO)
-        
+
         # Create formatter and add it to the handlers
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         fh.setFormatter(formatter)
         ch.setFormatter(formatter)
-        
+
         # Add the handlers to the logger
         self.logger.addHandler(fh)
         self.logger.addHandler(ch)
-        
+
         self.logger.info("Supply Chain Agent initialized")
 
     def connect_to_redis(self):
@@ -101,7 +101,7 @@ class SimpleProductAgent:
             'location': data.get('location', 'Unknown'),
             'timestamp': datetime.now().isoformat()
         }
-        
+
         try:
             self.redis_client.publish('alerts', json.dumps(alert_data))
             self.logger.info(f"Sent {alert_type} alert for {data['pallet_id']}")
