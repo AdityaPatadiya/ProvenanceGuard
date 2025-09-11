@@ -3,3 +3,4 @@ __pycache__
 XAMPP_Conection_test.py
 logs
 run_all.py
+node_modules
