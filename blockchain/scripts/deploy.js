@@ -1,15 +1,20 @@
+const { ethers } = require("hardhat");
+
 async function main() {
+  // Get the contract factory
   const Provenance = await ethers.getContractFactory("Provenance");
+
+  // Deploy
   const provenance = await Provenance.deploy();
 
-  await provenance.deployed();
+  // Wait until it's mined
+  await provenance.waitForDeployment();
 
-  console.log(`Provenance deployed to: ${provenance.address}`);
+  console.log(`Provenance deployed to: ${await provenance.getAddress()}`);
 }
 
-main()
-  .then(() => process.exit(0))
-  .catch((error) => {
-    console.error(error);
-    process.exit(1);
-  });
+// Run
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
