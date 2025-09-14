@@ -23,7 +23,7 @@ class LogisticsAgent:
             "warehouse_paris": {"location": [48.8566, 2.3522], "capacity": 120, "available": True},
             "warehouse_brussels": {"location": [50.8503, 4.3517], "capacity": 60, "available": True}
         }
-        self.blockchain_recorder = BlockchainRecorder()
+        self.blockchain_recorder = BlockchainRecorder(simulation_mode=False)
         self.setup_logging(log_file)
 
     def setup_logging(self, log_file):

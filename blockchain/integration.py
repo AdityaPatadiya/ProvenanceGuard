@@ -2,9 +2,13 @@ import logging
 import hashlib
 import random
 from datetime import datetime
+from web3 import Web3
+import json
+import os
+
 
 class BlockchainRecorder:
-    def __init__(self, simulation_mode=True):
+    def __init__(self, simulation_mode=False):
         self.logger = logging.getLogger('BlockchainRecorder')
         self.simulation_mode = simulation_mode
         self.mock_chain = []
@@ -13,6 +17,33 @@ class BlockchainRecorder:
             self.logger.info("Blockchain recorder initialized in simulation mode")
         else:
             self.logger.info("Blockchain recorder initialized in production mode")
+
+            # Connect to local Hardhat node
+            self.w3 = Web3(Web3.HTTPProvider("http://127.0.0.1:8545"))
+            if not self.w3.is_connected():
+                raise ConnectionError("⚠️ Could not connect to Hardhat node at http://127.0.0.1:8545")
+
+            # Use first Hardhat account
+            self.w3.eth.default_account = self.w3.eth.accounts[0]
+
+            # Load ABI
+            project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            abi_path = os.path.join(
+                project_root, "blockchain", "artifacts", "contracts", "Provenence.sol", "Provenance.json"
+            )
+            with open(abi_path) as f:
+                contract_json = json.load(f)
+                self.abi = contract_json["abi"]
+
+            # Replace with your deployed contract address (from deploy.js output)
+            self.contract_address = Web3.to_checksum_address(
+                "0x5FbDB2315678afecb367f032d93F642f64180aa3"
+            )
+
+            # Initialize contract
+            self.contract = self.w3.eth.contract(
+                address=self.contract_address, abi=self.abi
+            )
 
     def record_temperature_breach(self, pallet_id, temperature, location):
         """Record a temperature breach on blockchain"""
@@ -43,7 +74,6 @@ class BlockchainRecorder:
                 f"Block Hash: {block_data['block_hash']}"
             )
 
-            # Return as string (not bytes)
             return block_data['block_hash']
 
         except Exception as e:
@@ -51,11 +81,26 @@ class BlockchainRecorder:
             return None
 
     def _record_real_blockchain(self, pallet_id, temperature, location):
-        """Record on real blockchain - return hex string instead of bytes"""
-        self.logger.warning("Real blockchain recording not implemented yet")
-        # When implementing real blockchain, return hex string instead of bytes
-        # Example: return tx_hash.hex() instead of tx_hash
-        return f"real_tx_{pallet_id}_{datetime.now().timestamp()}"
+        """Record on real blockchain via Hardhat node"""
+        try:
+            # Call smart contract function
+            tx_hash = self.contract.functions.recordBreach(
+                str(pallet_id),
+                int(temperature)
+            ).transact()
+
+            receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
+
+            self.logger.info(
+                f"REAL: Recorded breach for pallet {pallet_id}, "
+                f"temp {temperature}°C → tx {receipt.transactionHash.hex()}"
+            )
+
+            return receipt.transactionHash.hex()
+
+        except Exception as e:
+            self.logger.error(f"Blockchain tx failed: {e}")
+            return None
 
     def _generate_mock_hash(self):
         """Generate a mock hash for simulation"""
