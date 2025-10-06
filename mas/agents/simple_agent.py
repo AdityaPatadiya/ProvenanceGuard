@@ -10,6 +10,7 @@ from datetime import datetime
 project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 appended_path = sys.path.append(project_root)
 from config.logging_config import LogConfigure
+from blockchain.state_tracker import PalletStateTracker
 
 
 class SimpleProductAgent:
@@ -17,8 +18,12 @@ class SimpleProductAgent:
         self.threshold = threshold
         self.redis_client = None
         self.pubsub = None
+
         self.logger = logging.getLogger('SupplyChainAgent')
-        self.setup_logger = LogConfigure().setup_logging(log_file, self.logger)
+        if not self.logger.handlers:
+            LogConfigure().setup_logging(log_file, self.logger)
+
+        self.state_tracker = PalletStateTracker()
 
     def connect_to_redis(self):
         """Connect to Redis server"""
@@ -86,6 +91,12 @@ class SimpleProductAgent:
         }
 
         try:
+            self.state_tracker.update_pallet(
+                data['pallet_id'],
+                status="alert_sent",
+                temperature=data.get('temperature'),
+                location=json.dumps(data.get('location', {}))
+            )
             self.redis_client.publish('alerts', json.dumps(alert_data))
             self.logger.info(f"Sent {alert_type} alert for {data['pallet_id']}")
         except Exception as e:
@@ -107,7 +118,7 @@ class SimpleProductAgent:
                     try:
                         data = json.loads(message['data'])
                         pallet_id = data['pallet_id']
-                        temperature = data['temperature']
+                        temperature = float(data.get('temperature', 0))
                         status = data.get('status', 'UNKNOWN')
 
                         # Log the regular temperature reading

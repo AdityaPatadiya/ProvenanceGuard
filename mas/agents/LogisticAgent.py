@@ -12,6 +12,7 @@ appended_path = sys.path.append(project_root)
 # Now you can import from the blockchain package
 from blockchain.integration import BlockchainRecorder
 from config.logging_config import LogConfigure
+from blockchain.state_tracker import PalletStateTracker
 
 
 class LogisticsAgent:
@@ -26,7 +27,9 @@ class LogisticsAgent:
         }
         self.blockchain_recorder = BlockchainRecorder(simulation_mode=False)
         self.logger = logging.getLogger('LogisticsAgent')
-        self.setup_logger = LogConfigure().setup_logging(log_file, self.logger)
+        if not self.logger.handlers:
+            LogConfigure().setup_logging(log_file, self.logger)
+        self.state_tracker = PalletStateTracker()
 
     def connect_to_redis(self):
         """Connect to Redis server"""
@@ -187,6 +190,13 @@ class LogisticsAgent:
 
                 tx_hash = self.blockchain_recorder.record_temperature_breach(pallet_id, temperature, location)
                 if tx_hash:
+                    self.state_tracker.update_pallet(
+                        pallet_id,
+                        status="recorded_on_blockchain",
+                        temperature=temperature,
+                        warehouse=warehouse,
+                        tx_hash=tx_hash
+                    )
                     self.logger.info(f"Temperature breach recorded on blockchain: {tx_hash}")
                     self.logger.info("BlockchainRecorder will handle Redis feedback publication")
                 else:
@@ -245,11 +255,17 @@ class LogisticsAgent:
             # Publish disposal command
             self.redis_client.publish('commands', json.dumps(disposal_command))
             self.logger.info(f"Issued disposal command for {pallet_id}")
+            self.state_tracker.update_pallet(
+                pallet_id,
+                status="spoiled",
+                warehouse="unknown",
+                last_action="disposal_initiated"
+            )
 
         except Exception as e:
             self.logger.error(f"Error handling spoilage alert: {e}")
             self.logger.debug(f"Alert data that caused error: {alert_data}")
-    
+
     def handle_feedback_event(self, event_data):
         """Handle blockchain or logistic feedback"""
         try:
@@ -258,6 +274,11 @@ class LogisticsAgent:
             tx_hash = event_data.get('tx_hash', None)
 
             if event_type == 'blockchain_recorded':
+                self.state_tracker.update_pallet(
+                    pallet_id,
+                    status="confirmed_on_chain",
+                    tx_hash=tx_hash
+                )
                 self.logger.info(f"Blockchain confirmation received for {pallet_id}: {tx_hash}")
                 print(f"Pallet {pallet_id} recorded on blockchian (tx: {tx_hash[:10]}...)")
             

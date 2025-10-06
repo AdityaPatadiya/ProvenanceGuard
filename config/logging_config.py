@@ -10,7 +10,6 @@ class LogConfigure():
         self.logger = logger
         self.logger.setLevel(logging.INFO)
 
-        print(self.logger)
         fh = logging.FileHandler(log_file)
         fh.setLevel(logging.INFO)
 

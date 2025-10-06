@@ -18,7 +18,8 @@ class BlockchainRecorder:
         self.redis_enabled = redis_enabled
         self.redis_client = None
         self.logger = logging.getLogger('BlockchainRecorder')
-        self.setup_logger = LogConfigure().setup_logging(log_file, self.logger)
+        if not self.logger.handlers:
+            LogConfigure().setup_logging(log_file, self.logger)
 
         if self.redis_enabled:
             try:
