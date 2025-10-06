@@ -1,3 +1,5 @@
+import os
+import sys
 import json
 import redis
 import time
@@ -5,37 +7,18 @@ import logging
 from datetime import datetime
 
 
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+appended_path = sys.path.append(project_root)
+from config.logging_config import LogConfigure
+
+
 class SimpleProductAgent:
     def __init__(self, threshold=8.0, log_file='../../logs/supply_chain.log'):
         self.threshold = threshold
         self.redis_client = None
         self.pubsub = None
-        self.setup_logging(log_file)
-
-    def setup_logging(self, log_file):
-        """Set up logging to file"""
-        # Create a logger
         self.logger = logging.getLogger('SupplyChainAgent')
-        self.logger.setLevel(logging.INFO)
-
-        # Create file handler which logs even debug messages
-        fh = logging.FileHandler(log_file)
-        fh.setLevel(logging.INFO)
-
-        # Create console handler with a higher log level
-        ch = logging.StreamHandler()
-        ch.setLevel(logging.INFO)
-
-        # Create formatter and add it to the handlers
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        fh.setFormatter(formatter)
-        ch.setFormatter(formatter)
-
-        # Add the handlers to the logger
-        self.logger.addHandler(fh)
-        self.logger.addHandler(ch)
-
-        self.logger.info("Supply Chain Agent initialized")
+        self.setup_logger = LogConfigure().setup_logging(log_file, self.logger)
 
     def connect_to_redis(self):
         """Connect to Redis server"""

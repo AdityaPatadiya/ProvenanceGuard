@@ -99,7 +99,7 @@ async def use_prosody_certificate():
                 # Create agent with this context
                 agent = ProductAgent("product_agent@localhost", "password", threshold=8.0)
                 agent.ssl_context = ssl_context
-                
+
                 await agent.start()
                 print("Agent started successfully with certificate!")
                 return

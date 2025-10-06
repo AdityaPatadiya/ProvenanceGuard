@@ -5,13 +5,27 @@ from datetime import datetime
 from web3 import Web3
 import json
 import os
+import redis
+
+from config.logging_config import LogConfigure
 
 
 class BlockchainRecorder:
-    def __init__(self, simulation_mode=False):
+    def __init__(self, simulation_mode=False, redis_enabled=True, log_file='../../logs/blockchain_recorder.log'):
         self.logger = logging.getLogger('BlockchainRecorder')
         self.simulation_mode = simulation_mode
         self.mock_chain = []
+        self.redis_enabled = redis_enabled
+        self.redis_client = None
+        self.logger = logging.getLogger('BlockchainRecorder')
+        self.setup_logger = LogConfigure().setup_logging(log_file, self.logger)
+
+        if self.redis_enabled:
+            try:
+                self.redis_client = redis.Redis(host='localhost', port=6379, db=0)
+                self.logger.info("Redis Connected for blockchain feedback")
+            except Exception as e:
+                self.logger.warning(f"Redis-blockchain connection failed: {e}")
 
         if simulation_mode:
             self.logger.info("Blockchain recorder initialized in simulation mode")
@@ -35,7 +49,7 @@ class BlockchainRecorder:
                 contract_json = json.load(f)
                 self.abi = contract_json["abi"]
 
-            # Replace with your deployed contract address (from deploy.js output)
+            # Replace with your deployed contract address
             self.contract_address = Web3.to_checksum_address(
                 "0x5FbDB2315678afecb367f032d93F642f64180aa3"
             )
@@ -45,6 +59,29 @@ class BlockchainRecorder:
                 address=self.contract_address, abi=self.abi
             )
 
+    # ---------------------------
+    # Redis Feedback Publisher
+    # ---------------------------
+    def _publish_feedback(self, pallet_id, tx_hash, event_type="blockchain_recorded"):
+        """Publish feedback to Redis channel"""
+        if not self.redis_enabled or not self.redis_client:
+            return
+
+        try:
+            feedback = {
+                "type": event_type,
+                "pallet_id": pallet_id,
+                "tx_hash": tx_hash,
+                "timestamp": datetime.now().isoformat()
+            }
+            self.redis_client.publish("events", json.dumps(feedback))
+            self.logger.info(f"Published blockchain feedback for {pallet_id}")
+        except Exception as e:
+            self.logger.error(f"Error to publish blockchain feedback: {e}")
+
+    # ---------------------------
+    # Blockchain Recording
+    # ---------------------------
     def record_temperature_breach(self, pallet_id, temperature, location):
         """Record a temperature breach on blockchain"""
         if self.simulation_mode:
@@ -53,7 +90,7 @@ class BlockchainRecorder:
             return self._record_real_blockchain(pallet_id, temperature, location)
 
     def _record_simulation(self, pallet_id, temperature, location):
-        """Simulate blockchain recording - always return string"""
+        """Simulate blockchain recording"""
         try:
             block_data = {
                 'type': 'temperature_breach',
@@ -74,7 +111,9 @@ class BlockchainRecorder:
                 f"Block Hash: {block_data['block_hash']}"
             )
 
-            return block_data['block_hash']
+            tx_hash = block_data['block_hash']
+            self._publish_feedback(pallet_id, tx_hash)
+            return tx_hash
 
         except Exception as e:
             self.logger.error(f"Failed to record temperature breach: {e}")
@@ -83,7 +122,6 @@ class BlockchainRecorder:
     def _record_real_blockchain(self, pallet_id, temperature, location):
         """Record on real blockchain via Hardhat node"""
         try:
-            # Call smart contract function
             tx_hash = self.contract.functions.recordBreach(
                 str(pallet_id),
                 int(temperature)
@@ -91,12 +129,13 @@ class BlockchainRecorder:
 
             receipt = self.w3.eth.wait_for_transaction_receipt(tx_hash)
 
+            tx_hex = receipt.transactionHash.hex()
             self.logger.info(
-                f"REAL: Recorded breach for pallet {pallet_id}, "
-                f"temp {temperature}°C → tx {receipt.transactionHash.hex()}"
+                f"REAL: Recorded breach for pallet {pallet_id}, temp {temperature}°C → tx {tx_hex}"
             )
 
-            return receipt.transactionHash.hex()
+            self._publish_feedback(pallet_id, tx_hex)
+            return tx_hex
 
         except Exception as e:
             self.logger.error(f"Blockchain tx failed: {e}")

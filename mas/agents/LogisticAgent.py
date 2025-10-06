@@ -11,6 +11,7 @@ appended_path = sys.path.append(project_root)
 
 # Now you can import from the blockchain package
 from blockchain.integration import BlockchainRecorder
+from config.logging_config import LogConfigure
 
 
 class LogisticsAgent:
@@ -24,27 +25,8 @@ class LogisticsAgent:
             "warehouse_brussels": {"location": [50.8503, 4.3517], "capacity": 60, "available": True}
         }
         self.blockchain_recorder = BlockchainRecorder(simulation_mode=False)
-        self.setup_logging(log_file)
-
-    def setup_logging(self, log_file):
-        """Set up logging to file"""
         self.logger = logging.getLogger('LogisticsAgent')
-        self.logger.setLevel(logging.INFO)
-
-        fh = logging.FileHandler(log_file)
-        fh.setLevel(logging.INFO)
-
-        ch = logging.StreamHandler()
-        ch.setLevel(logging.INFO)
-
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        fh.setFormatter(formatter)
-        ch.setFormatter(formatter)
-
-        self.logger.addHandler(fh)
-        self.logger.addHandler(ch)
-
-        self.logger.info("Logistics Agent initialized")
+        self.setup_logger = LogConfigure().setup_logging(log_file, self.logger)
 
     def connect_to_redis(self):
         """Connect to Redis server"""
@@ -53,6 +35,7 @@ class LogisticsAgent:
             self.pubsub = self.redis_client.pubsub()
             self.pubsub.subscribe('alerts')  # Subscribe to alerts channel
             self.pubsub.subscribe('logistics_commands')  # Subscribe to commands channel
+            self.pubsub.subscribe('events')
             self.logger.info("Connected to Redis and subscribed to channels")
             return True
         except redis.ConnectionError:
@@ -205,6 +188,7 @@ class LogisticsAgent:
                 tx_hash = self.blockchain_recorder.record_temperature_breach(pallet_id, temperature, location)
                 if tx_hash:
                     self.logger.info(f"Temperature breach recorded on blockchain: {tx_hash}")
+                    self.logger.info("BlockchainRecorder will handle Redis feedback publication")
                 else:
                     self.logger.warning("Failed to record temperature breach on blockchain")
 
@@ -265,6 +249,27 @@ class LogisticsAgent:
         except Exception as e:
             self.logger.error(f"Error handling spoilage alert: {e}")
             self.logger.debug(f"Alert data that caused error: {alert_data}")
+    
+    def handle_feedback_event(self, event_data):
+        """Handle blockchain or logistic feedback"""
+        try:
+            event_type = event_data.get('type', 'unknown')
+            pallet_id = event_data.get('pallet_id', 'UNKNOWN')
+            tx_hash = event_data.get('tx_hash', None)
+
+            if event_type == 'blockchain_recorded':
+                self.logger.info(f"Blockchain confirmation received for {pallet_id}: {tx_hash}")
+                print(f"Pallet {pallet_id} recorded on blockchian (tx: {tx_hash[:10]}...)")
+            
+            elif event_type == 'reroute_completed':
+                self.logger.info(f"Reroute completed for {pallet_id}")
+                print(f"Pallet {pallet_id} rerouted successfully.")
+            
+            else:
+                self.logger.warning(f"Unrecognized event type '{event_type}' for pallet {pallet_id}")
+        
+        except Exception as e:
+            self.logger.error(f"Error processing feedback event: {e}")
 
     def handle_warehouse_status(self, command_data):
         """Handle warehouse status updates"""
@@ -300,7 +305,6 @@ class LogisticsAgent:
 
                         if channel == 'alerts':
                             alert_type = data.get('type')
-
                             if alert_type == 'temperature_breach':
                                 self.handle_temperature_alert(data)
                             elif alert_type == 'spoilage':
@@ -310,11 +314,13 @@ class LogisticsAgent:
 
                         elif channel == 'logistics_commands':
                             command_type = data.get('type')
-
                             if command_type == 'warehouse_status':
                                 self.handle_warehouse_status(data)
                             else:
                                 self.logger.warning(f"Unknown command type: {command_type}")
+                        
+                        elif channel == 'events':
+                            self.handle_feedback_event(data)                            
 
                     except (json.JSONDecodeError) as e:
                         self.logger.error(f"Error processing message: {e}")
